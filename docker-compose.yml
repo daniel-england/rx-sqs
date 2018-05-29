@@ -1,0 +1,17 @@
+version: "3.6"
+services:
+  sqs:
+    image: roribio16/alpine-sqs:latest
+    ports:
+      - "9324:9324"
+      - "9325:9325"
+    stdin_open: true
+    tty: true
+
+  elasticsearch:
+    image: elasticsearch:latest
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    environment:
+      - "discovery.type=single-node"
