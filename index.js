@@ -2,12 +2,12 @@ const Consumer = require('sqs-consumer');
 const Rx = require('rxjs/Rx');
 const AWS = require('aws-sdk');
 
-AWS.config.update({region: 'eu-central-1', accessKeyId: 'notValidKey', secretAccessKey: 'notValidSecret'});
+AWS.config.update({region: 'es-east-1', accessKeyId: 'notValidKey', secretAccessKey: 'notValidSecret'});
 
-const queueUrl = 'http://localhost:9324/queue/default';
+const queueUrl = 'http://localhost:9324/queue/test-topic';
 const availMessagesPerConsumer = 20;
+const minConsumers = 3;
 const maxConsumers = 60;
-let consumerCount = 0;
 
 const availMessages = Rx.Observable.create(emitter => {
     const sqs = new AWS.SQS();
@@ -26,18 +26,16 @@ const availMessages = Rx.Observable.create(emitter => {
     });
 });
 
-let consumerNum = 0;
-
+let consumerCount = 0;
 const getConsumer = completeOnEmpty => {
-    const num = consumerNum++;
+    const num = consumerCount++;
     console.log(`get consumer: ${num} #completedOnEmpty: ${completeOnEmpty}`);
 
-    consumerCount++;
     return Rx.Observable.create(emitter => {
         const consumer = Consumer.create({
-            queueUrl: 'http://localhost:9324/queue/default',
+            queueUrl: queueUrl,
             handleMessage: (message, done) => {
-                //console.log(`consumer ${num} got a message`);
+                console.log(`consumer ${num} got a message`);
                 emitter.next([message, done]);
             },
             batchSize: 10,
@@ -49,6 +47,7 @@ const getConsumer = completeOnEmpty => {
         });
 
         consumer.on('empty', () => {
+            console.log(`queue empty ${num} ## pool length: ${consumerCount}`);
             if (completeOnEmpty) emitter.complete();
         });
 
@@ -64,45 +63,41 @@ const getConsumer = completeOnEmpty => {
 
 const messageProcessor = () => ({
     next: ([message, done]) => {
-        //console.log('completing message');
+        console.log('completing message');
         done();
     }
 });
 
-const baseConsumer = getConsumer(false);
+const baseConsumers = Rx.Observable.range(1, minConsumers)
+    .map(() => getConsumer(false))
+    .mergeAll();
 
-const subject = new Rx.Subject();
+const pool = Rx.Observable.create(emitter => {
+    availMessages
+        .mergeMap(numberOfAvailMessages => {
+            const wantsToCreate = Math.ceil(numberOfAvailMessages / availMessagesPerConsumer) - consumerCount;
+            const canCreate = maxConsumers - consumerCount;
 
-subject.subscribe(messageProcessor());
+            let willCreate;
+            if (wantsToCreate > canCreate) {
+                willCreate = canCreate;
+            } else {
+                willCreate = wantsToCreate;
+            }
 
-subject
-    .throttleTime(1000)
-    .withLatestFrom(availMessages, (message, latestAvailMessage) => latestAvailMessage)
-    .do(availMessages => console.log(`avail messages: ${availMessages}`))
-    .mergeScan((consumers, availMessages) => {
-        consumers.count().subscribe(count => {
-            console.log(`consumers:${count}`);
+            console.log(`wantsToCreate: ${wantsToCreate} canCreate: ${canCreate} willCreate: ${willCreate} numberOfAvailMessage: ${numberOfAvailMessages}`);
+            if (willCreate > 0) {
+                return Rx.Observable.range(1, willCreate)
+                    .map(() => getConsumer(true));
+            }
+            return Rx.Observable.empty();
+        })
+        .mergeAll()
+        .subscribe(([message, done]) => {
+            emitter.next([message, done]);
         });
+});
 
-        const numToCreate = Math.ceil(availMessages / availMessagesPerConsumer);
-
-        let goingToCreate;
-        if (numToCreate + consumerCount > maxConsumers) {
-            goingToCreate = maxConsumers - consumerCount;
-        } else {
-            goingToCreate = numToCreate;
-        }
-
-        console.log(`Creating ${goingToCreate}.  Current count: ${goingToCreate}`);
-        return Rx.Observable.range(1, goingToCreate)
-            .map(() => {
-                return getConsumer(true)
-            });
-    }, Rx.Observable.empty())
-    .subscribe(consumer => {
-        console.log(JSON.stringify(consumer));
-
-        consumer.subscribe(messageProcessor());
-    });
-
-baseConsumer.subscribe(subject);
+baseConsumers
+    .merge(pool)
+    .subscribe(messageProcessor());

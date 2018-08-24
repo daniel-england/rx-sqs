@@ -1,0 +1,10 @@
+.idea/
+*.iml
+node_modules/
+.DS_Store
+npm-debug.log
+out/
+coverage/
+package/
+*.tgz
+*.tg.gz

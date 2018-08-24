@@ -5,6 +5,8 @@ services:
     ports:
       - "9324:9324"
       - "9325:9325"
+    volumes:
+      - ./sqs:/opt/custom
     stdin_open: true
     tty: true
 
