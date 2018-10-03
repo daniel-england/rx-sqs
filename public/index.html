@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Welcome to Vue</title>
+    <script src="https://unpkg.com/vue"></script>
+    <style>
+        .chart-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: row;
+        }
+        .chart {
+            height:400px;
+            width:400px
+        }
+    </style>
+</head>
+<body>
+<div id="app">
+    <p>Consumer Count: {{consumerCount}}</p>
+    <p>Avail Meessages: {{availMessages}}</p>
+    <p>Max Consumers: {{maxConsumers}}</p>
+    <p>Min Consumers: {{minConsumers}}</p>
+    <p>Time In Queue: {{timeInQueue}}</p>
+    <p>Average Time In Queue: {{averageTimeInQueue}}</p>
+    <p>Time To Index: {{timeToIndex}}</p>
+    <p>Average Time To Index: {{averageTimeToIndex}}</p>
+    <p>Messages Per Second: {{messagesPerSecond}}</p>
+    <p>Index Per Second: {{indexedPerSecond}}</p>
+    <p>Total Indexed: {{totalIndexed}}</p>
+    <p>Message Count: {{messageCount}}</p>
+</div>
+
+<div class="chart-container">
+    <div class="chart">
+        <canvas id="chart" ></canvas>
+    </div>
+    <div class="chart">
+        <canvas id="chart2"></canvas>
+    </div>
+    <div class="chart">
+        <canvas id="chart3"></canvas>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.22.2/moment.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.4.0/Chart.min.js"></script>
+<script>
+    const data = {
+        consumerCount: 0,
+        availMessages: 0,
+        maxConsumers: 0,
+        minConsumers: 0,
+        timeInQueue: 0,
+        averageTimeInQueue: 0,
+        timeToIndex: 0,
+        averageTimeToIndex: 0,
+        messagesPerSecond: 0,
+        indexedPerSecond: 0,
+        totalIndexed: 0,
+        messageCount: 0
+    };
+
+    const chartData = [];
+    const chartConsumers = [];
+    const averageTimeInQueue = [];
+    const averageTimeToIndex = [];
+    const messagesPerSecond = [];
+    const indexedPerSecond = [];
+
+    const ctx = document.getElementById("chart");
+    const ctx2 = document.getElementById("chart2");
+    const ctx3 = document.getElementById("chart3");
+    const myChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            datasets: [{
+                label: 'Waiting Messages',
+                yAxisID: 'left',
+                data: chartData,
+                pointRadius: 0,
+                backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                borderColor: 'rgba(255,99,132,1)'
+            },{
+                label: 'Active Consumers',
+                yAxisID: 'right',
+                data: chartConsumers,
+                pointRadius: 0,
+                borderColor: 'rgba(54, 162, 235, 1)',
+                fill: false
+            }]
+        },
+        options: {
+            scales: {
+                xAxes: [{
+                    type: 'time',
+                    display: false,
+                    distribution: 'series'
+                }],
+                yAxes: [{
+                    id: 'left',
+                    position: 'left',
+                    ticks: {
+                        fontColor: 'red',
+                        max: 2000,
+                        min: 0
+                    }
+                }, {
+                    id: 'right',
+                    position: 'right',
+                    color: 'rgba(54, 162, 235, 1)',
+                    ticks: {
+                        fontColor: 'blue',
+                        max: data.maxConsumers,
+                        min: 0
+                    }
+                }]
+            }
+        }
+    });
+
+    const myChart2 = new Chart(ctx2, {
+        type: 'line',
+        data: {
+            datasets: [{
+                label: 'Messages Per Second',
+                yAxisID: 'left',
+                data: messagesPerSecond,
+                pointRadius: 0,
+                backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                borderColor: 'rgba(255,99,132,1)'
+            },{
+                label: 'Indexed Per Second',
+                yAxisID: 'left',
+                data: indexedPerSecond,
+                pointRadius: 0,
+                borderColor: 'rgba(54, 162, 235, 1)',
+                fill: false
+            }]
+        },
+        options: {
+            scales: {
+                xAxes: [{
+                    type: 'time',
+                    display: false,
+                    distribution: 'series'
+                }],
+                yAxes: [{
+                    id: 'left',
+                    position: 'left',
+                    ticks: {
+                        fontColor: 'red',
+                        max: 2000,
+                        min: 0
+                    }
+                }]
+            }
+        }
+    });
+
+    const myChart3 = new Chart(ctx3, {
+        type: 'line',
+        data: {
+            datasets: [{
+                label: 'Avg Time In Queue (ms))',
+                yAxisID: 'left',
+                data: averageTimeInQueue,
+                pointRadius: 0,
+                backgroundColor: 'rgba(255, 99, 132, 1)',
+                borderColor: 'rgba(255,99,132,1)',
+                fill: 'origin'
+            },{
+                label: 'Avg Time To Index (ms)',
+                yAxisID: 'left',
+                data: averageTimeToIndex,
+                pointRadius: 0,
+                backgroundColor: 'rgba(75, 192, 192, 1)',
+                borderColor: 'rgba(75, 192, 192, 1)',
+                fill: '-1'
+            }]
+        },
+        options: {
+            scales: {
+                xAxes: [{
+                    type: 'time',
+                    display: false,
+                    distribution: 'series'
+                }],
+                yAxes: [{
+                    id: 'left',
+                    position: 'left',
+                    ticks: {
+                        fontColor: 'red',
+                        max: 2000,
+                        min: 0
+                    }
+                }]
+            }
+        }
+    });
+
+    const push = (array, value) => {
+        if (array.length > 100) {
+            array.shift();
+        }
+        array.push(value);
+    };
+
+    const app = new Vue({
+        el: '#app',
+        data: data,
+        created: () => {
+            const socket = new WebSocket("ws://penguin.linux.test:5555");
+            socket.onmessage = event => {
+                const message = JSON.parse(event.data);
+                Object.assign(data, message);
+                const now = new Date();
+                push(chartData, {x: now, y: message.availMessages});
+                push(chartConsumers, {x: now, y: message.consumerCount});
+
+                push(messagesPerSecond, {x: now, y: message.messagesPerSecond});
+                push(indexedPerSecond, {x: now, y: message.indexedPerSecond});
+                push(averageTimeInQueue, {x: now, y: message.averageTimeInQueue});
+                push(averageTimeToIndex, {x: now, y: message.averageTimeToIndex + message.averageTimeInQueue});
+                myChart.config.options.scales.yAxes[1].ticks.max = message.maxConsumers;
+                //const minDate = chartData.reduce((min, data) => data.x < min ? data.x : min);
+                //myChart.config.options.scales.xAxes[0].ticks.min = minDate;
+
+                myChart.update();
+                myChart2.update();
+                myChart3.update();
+            };
+        }
+    })
+</script>
+</body>
+</html>

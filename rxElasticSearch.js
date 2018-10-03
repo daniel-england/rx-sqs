@@ -1,7 +1,9 @@
 const elasticsearch = require('elasticsearch');
 const rx = require('rxjs/Rx');
+const stats = require('./stats');
+const moment = require('moment');
 
-const defaultClient = new elasticsearch.Client({
+const getDefaultClient = () =>  new elasticsearch.Client({
     host: 'localhost:9200',
     log: 'warning'
 });
@@ -54,37 +56,43 @@ const streamAll = client => searchBody => {
     });
 };
 
-const bulkUpdate = client => (observable, toIndex, toType, toId) => {
-
-
-
-
-
+const pushToIndex = (client, updateSubject) => observable => {
+    const start = moment();
+    observable.subscribe(indexRecord => {
+        updateSubject.next([start, indexRecord]);
+    });
 };
 
-const pushToIndex = client => (observable) => {
-    observable.bufferCount(bulkBatchSize)
-        .subscribe(batch => {
+const subscribeToUpdater = (client, updateSubject) => {
+    rx.Observable.create(emitter => {
+        updateSubject.subscribe(([startTime, indexRecord]) => {
+            emitter.next([startTime, indexRecord]);
+        })
+    }).bufferCount(bulkBatchSize)
+        .mergeMap(batch => {
             const bulkPayload = [];
-            batch.forEach(([index, type, id, payload]) => {
-                bulkPayload.push(`{ index:  { _index: '${index}', _type: '${type}', _id: ${id} } }`);
-                bulkPayload.push(payload);
+            const startTimes = [];
+            batch.forEach(([startTime, indexRecord]) => {
+                bulkPayload.push(`{ "index":  { "_index": "'${indexRecord._index}'", "_type": "'${indexRecord._type}'", "_id": "${indexRecord._id}" } }`);
+                bulkPayload.push(indexRecord._source);
+                startTimes.push(startTime);
             });
 
-            client.bulk({body: bulkPayload})
-                .then(res => console.log(`res: ${res}`))
-                .catch(console.error);
+            return rx.Observable.combineLatest(rx.Observable.of(startTimes), client.bulk({body: bulkPayload}));
+        }).subscribe(([startTimes, res]) => {
+            startTimes.forEach(startTime => stats.statSubjects.timeToIndex.next(moment.duration(moment().diff(startTime)).get('milliseconds')));
+            stats.registerStat('indexed', res.items.length);
         });
 };
 
-export default client => {
-    const _client = client || defaultClient;
+module.exports = (client = getDefaultClient()) => {
+    const updateSubject = new rx.Subject();
+    subscribeToUpdater(client, updateSubject);
 
     const module = {};
 
-    module.streamAll = streamAll(_client);
-    module.bulkUpdate = bulkUpdate(_client);
-
+    module.streamAll = streamAll(client);
+    module.pushToIndex = pushToIndex(client, updateSubject);
 
     return module;
-}
+};
